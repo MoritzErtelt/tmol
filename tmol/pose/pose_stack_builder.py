@@ -46,8 +46,11 @@ class PoseStackBuilder:
             # even if some of the residue types were perhaps created
             # programmatically instead of being read from an input file
             assert pbt0.chem_db is ps.packed_block_types.chem_db
-        reuse_pbt = all(
-            pose_stack.packed_block_types is pbt0 for pose_stack in pose_stacks
+        reuse_pbt = (
+            pbt0.device == device
+            and all(
+                pose_stack.packed_block_types is pbt0 for pose_stack in pose_stacks
+            )
         )
         if reuse_pbt:
             packed_block_types = pbt0
@@ -951,7 +954,9 @@ class PoseStackBuilder:
                     torch.full((1,), -1, dtype=torch.int32, device=device),
                 )
             )
-            remapped = mapping[pose_stack.block_type_ind.to(torch.int64)]
+            remapped = mapping[
+                pose_stack.block_type_ind.to(device=device, dtype=torch.int64)
+            ]
 
             block_type_ind[offset : (offset + len(pose_stack)), : remapped.shape[1]] = (
                 remapped
