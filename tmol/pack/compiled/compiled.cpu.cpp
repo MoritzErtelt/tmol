@@ -8,17 +8,47 @@
 #include "compiled.impl.hh"
 
 #include <ctime>
+#include <cstdint>
 #include <vector>
 
 namespace tmol {
 namespace pack {
 namespace compiled {
 
+class PoseRandom {
+ public:
+  PoseRandom(bool use_seed, int64_t seed)
+      : use_seed_(use_seed),
+        state_(static_cast<uint64_t>(seed) ^ 0x9e3779b97f4a7c15ULL) {}
+
+  int in_range(int n) {
+    return use_seed_ ? static_cast<int>(next() % n) : rand() % n;
+  }
+
+  float uniform() {
+    return use_seed_
+               ? static_cast<float>((next() >> 40) * (1.0 / (1ULL << 24)))
+               : static_cast<float>(rand()) / RAND_MAX;
+  }
+
+ private:
+  uint64_t next() {
+    state_ ^= state_ >> 12;
+    state_ ^= state_ << 25;
+    state_ ^= state_ >> 27;
+    return state_ * 0x2545F4914F6CDD1DULL;
+  }
+
+  bool use_seed_;
+  uint64_t state_;
+};
+
 template <tmol::Device D>
 void set_quench_order(
     TView<int, 1, D> quench_order,
     int const n_rots,
-    int const pose_rotamer_offset) {
+    int const pose_rotamer_offset,
+    PoseRandom& random) {
   // Create a random permutation of all the rotamers
   // and visit them in this order to ensure all of them
   // are seen during the quench step
@@ -26,7 +56,7 @@ void set_quench_order(
     quench_order[i] = i + pose_rotamer_offset;
   }
   for (int i = 0; i <= n_rots - 2; ++i) {
-    int j = i + rand() % (n_rots - i);
+    int j = i + random.in_range(n_rots - i);
     // swap i and j;
     int jval = quench_order[j];
     quench_order[j] = quench_order[i];
@@ -49,7 +79,9 @@ auto AnnealerDispatch<D>::forward(
         chunk_offset_offsets,            // n-poses x max-n-res x max-n-res
     TView<int64_t, 1, D> chunk_offsets,  // n-chunks-on-interacting-res
     TView<float, 1, D> energy1b,
-    TView<float, 1, D> energy2b)
+    TView<float, 1, D> energy2b,
+    TView<int64_t, 1, D> pose_seeds,
+    bool use_pose_seeds)
     -> std::tuple<TPack<float, 2, D>, TPack<int, 3, D>> {
   int const n_poses = pose_n_res.size(0);
   int const max_n_res = n_rotamers_for_res.size(1);
@@ -76,6 +108,7 @@ auto AnnealerDispatch<D>::forward(
   float const low_temp = 0.3;  // matches Rosetta SimAnnealerBase::lowtemp
 
   for (int pose = 0; pose < n_poses; ++pose) {
+    PoseRandom random(use_pose_seeds, use_pose_seeds ? pose_seeds[pose] : 0);
     int const n_res = pose_n_res[pose];
     int const pose_n_rotamers = n_rotamers_for_pose[pose];
     int const pose_rotamer_offset = rotamer_offset_for_pose[pose];
@@ -99,7 +132,7 @@ auto AnnealerDispatch<D>::forward(
           current_rotamer_assignments[pose][traj][i] = -1;
           best_rotamer_assignments[pose][traj][i] = -1;
         } else {
-          int rand_rot = rand() % i_n_rots;
+          int rand_rot = random.in_range(i_n_rots);
           current_rotamer_assignments[pose][traj][i] = rand_rot;
           best_rotamer_assignments[pose][traj][i] = rand_rot;
         }
@@ -146,11 +179,12 @@ auto AnnealerDispatch<D>::forward(
               // random order before starting over with a different
               // random order.
               set_quench_order(
-                  quench_order, pose_n_rotamers, pose_rotamer_offset);
+                  quench_order, pose_n_rotamers, pose_rotamer_offset, random);
             }
             global_ran_rot = quench_order[j % pose_n_rotamers];
           } else {
-            global_ran_rot = rand() % pose_n_rotamers + pose_rotamer_offset;
+            global_ran_rot =
+                random.in_range(pose_n_rotamers) + pose_rotamer_offset;
           }
 
           int const ran_res = res_for_rot[global_ran_rot];
@@ -215,7 +249,7 @@ auto AnnealerDispatch<D>::forward(
             prev_e += k_prev_e;
           }
 
-          float const uniform_random = float(rand()) / RAND_MAX;
+          float const uniform_random = random.uniform();
 
           if (pass_metropolis(
                   temperature, uniform_random, deltaE, prev_e, quench)) {

@@ -67,7 +67,9 @@ struct AnnealerDispatch {
       TView<int64_t, 3, D> chunk_offset_offsets,
       TView<int64_t, 1, D> chunk_offsets,
       TView<float, 1, D> energy1b,
-      TView<float, 1, D> energy2b)
+      TView<float, 1, D> energy2b,
+      TView<int64_t, 1, D> pose_seeds,
+      bool use_pose_seeds)
       -> std::tuple<TPack<float, 2, D>, TPack<int, 3, D> >;
 };
 
