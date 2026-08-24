@@ -196,7 +196,7 @@ class PackedBlockTypes:
                 [down_conn_inds.unsqueeze(1), up_conn_inds.unsqueeze(1)], dim=1
             ),
             default_jump_connection_atom_inds=def_jumpconn_inds,
-            device=device,
+            device=n_atoms.device,
         )
 
     @classmethod

@@ -115,6 +115,10 @@ class PoseStack:
 
     def __attrs_post_init__(self):
 
+        # torch.device("cuda") resolves tensor allocation to a concrete device
+        # such as cuda:0. Keep this metadata aligned with the pose tensors.
+        self.device = self.coords.device
+
         n_poses = self.block_coord_offset.size(0)
         n_blocks = self.block_coord_offset.size(1)
 

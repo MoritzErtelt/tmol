@@ -172,8 +172,32 @@ def test_from_poses_rebuilds_packed_block_types_on_output_device(
 
     pose_stack = PoseStackBuilder.from_poses([parent, parent], torch_device)
 
-    assert pose_stack.device == torch_device
-    assert pose_stack.packed_block_types.device == torch_device
-    assert pose_stack.block_type_ind.device == torch_device
-    assert pose_stack.block_type_ind64.device == torch_device
-    PackerTask(pose_stack, PackerPalette())
+    assert pose_stack.device == pose_stack.coords.device
+    assert (
+        pose_stack.packed_block_types.device
+        == pose_stack.packed_block_types.n_atoms.device
+    )
+    assert pose_stack.block_type_ind.device == pose_stack.coords.device
+    assert pose_stack.block_type_ind64.device == pose_stack.coords.device
+
+    task = PackerTask(pose_stack, PackerPalette())
+    task.disable_packing_by_block_mask(
+        torch.zeros_like(pose_stack.block_type_ind, dtype=torch.bool)
+    )
+
+
+def test_pose_stack_device_metadata_tracks_allocated_tensors(ubq_pdb, torch_device):
+    pose_stack = pose_stack_from_pdb(
+        ubq_pdb, torch_device, residue_start=0, residue_end=20
+    )
+
+    assert pose_stack.device == pose_stack.coords.device
+    assert (
+        pose_stack.packed_block_types.device
+        == pose_stack.packed_block_types.n_atoms.device
+    )
+
+    task = PackerTask(pose_stack, PackerPalette())
+    task.disable_packing_by_block_mask(
+        torch.zeros_like(pose_stack.block_type_ind, dtype=torch.bool)
+    )
