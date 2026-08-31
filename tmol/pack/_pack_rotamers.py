@@ -21,6 +21,7 @@ def pack_rotamers(
     sfxn: ScoreFunction,
     task: PackerTask,
     verbose: bool = False,
+    pose_seeds: torch.Tensor | None = None,
 ) -> PoseStack:
     """Optimize side-chain conformers for a pose stack.
 
@@ -29,6 +30,9 @@ def pack_rotamers(
         sfxn: Score function used to rank rotamer assignments.
         task: Allowed block types, conformers, and packing positions.
         verbose: Print synchronized stage timings when true.
+        pose_seeds: Optional one-dimensional int64 tensor containing one stable
+            random seed per pose. Seeds are local to pose identity, so changing
+            batch order or composition does not change a pose's random stream.
 
     Returns:
         A new pose stack containing the lowest-ranked assignment per pose.
@@ -60,7 +64,9 @@ def pack_rotamers(
         synchronize_device(pose_stack.device)
     end_time4 = time.perf_counter()
 
-    _, rotamer_assignments = run_simulated_annealing(packer_energy_tables)
+    _, rotamer_assignments = run_simulated_annealing(
+        packer_energy_tables, pose_seeds=pose_seeds
+    )
     if verbose:
         synchronize_device(pose_stack.device)
     end_time5 = time.perf_counter()

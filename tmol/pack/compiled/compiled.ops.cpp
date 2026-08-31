@@ -127,8 +127,19 @@ std::vector<Tensor> anneal(
     Tensor chunk_offset_offsets,
     Tensor chunk_offsets,
     Tensor energy1b,
-    Tensor energy2b) {
+    Tensor energy2b,
+    Tensor pose_seeds) {
   nvtx_range_push("pack_anneal");
+  TORCH_CHECK(
+      pose_seeds.scalar_type() == torch::kInt64,
+      "pose_seeds must have dtype torch.int64");
+  TORCH_CHECK(
+      pose_seeds.device() == energy1b.device(),
+      "pose_seeds must be on the same device as energy1b");
+  TORCH_CHECK(pose_seeds.dim() == 1, "pose_seeds must be one-dimensional");
+  TORCH_CHECK(
+      pose_seeds.numel() == 0 || pose_seeds.numel() == pose_n_res.numel(),
+      "pose_seeds must be empty or have one entry per pose");
   at::Tensor scores;
   at::Tensor rotamer_assignments;
 
@@ -148,7 +159,9 @@ std::vector<Tensor> anneal(
                                       TCAST(chunk_offset_offsets),
                                       TCAST(chunk_offsets),
                                       TCAST(energy1b),
-                                      TCAST(energy2b));
+                                      TCAST(energy2b),
+                                      TCAST(pose_seeds),
+                                      pose_seeds.numel() != 0);
                                   scores = std::get<0>(result).tensor;
                                   rotamer_assignments =
                                       std::get<1>(result).tensor;

@@ -3,6 +3,7 @@ import pytest
 import torch
 import attrs
 from tmol.io import pose_stack_from_pdb
+from tmol.pack import PackerPalette, PackerTask
 from tmol.pose import PoseStackBuilder
 
 
@@ -165,3 +166,19 @@ def test_round_trip_irregular_pose_stack_and_split(
         torch.testing.assert_close(
             split_pose_stack.chain_id64[:, : i_pose.max_n_blocks], i_pose.chain_id64
         )
+
+
+def test_from_poses_rebuilds_packed_block_types_on_output_device(
+    ubq_pdb, torch_device
+):
+    parent = pose_stack_from_pdb(
+        ubq_pdb, torch.device("cpu"), residue_start=0, residue_end=20
+    )
+
+    pose_stack = PoseStackBuilder.from_poses([parent, parent], torch_device)
+
+    assert pose_stack.device == torch_device
+    assert pose_stack.packed_block_types.device == torch_device
+    assert pose_stack.block_type_ind.device == torch_device
+    assert pose_stack.block_type_ind64.device == torch_device
+    PackerTask(pose_stack, PackerPalette())

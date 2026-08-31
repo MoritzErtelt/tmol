@@ -237,6 +237,75 @@ def test_pack_rotamers(
     )
 
 
+@pytest.mark.slow
+def test_simulated_annealing_pose_seeds_are_pose_local(
+    default_database, ubq_pdb, dun_sampler, torch_device
+):
+    """Per-pose seeds make packing independent of batch order."""
+
+    def energy_tables_for(poses):
+        pose_stack, task = setup_pose_stack_and_task(
+            poses, torch_device, dun_sampler
+        )
+        task = SetPackerTask.from_packer_task(task)
+        score_function = get_packer_sfxn(default_database, torch_device)
+        pose_stack, rotamer_set = build_rotamers(
+            pose_stack, task, pose_stack.packed_block_types.chem_db
+        )
+        _, _, _, _, _, tables = build_packer_energy_tables(
+            pose_stack, rotamer_set, score_function
+        )
+        return tables
+
+    parent = pose_stack_from_pdb(
+        ubq_pdb, torch_device, residue_start=0, residue_end=20
+    )
+    perturbed_parent = parent.clone()
+    perturbed_parent.coords[0, 0, 0] += 0.05
+    batch_tables = energy_tables_for([parent, perturbed_parent])
+    seeds = torch.tensor([17, 29], dtype=torch.int64, device=torch_device)
+
+    scores_a, assignments_a = run_simulated_annealing(
+        batch_tables, pose_seeds=seeds
+    )
+    scores_b, assignments_b = run_simulated_annealing(
+        batch_tables, pose_seeds=seeds
+    )
+    torch.testing.assert_close(scores_a, scores_b, rtol=0, atol=0)
+    torch.testing.assert_close(assignments_a, assignments_b, rtol=0, atol=0)
+
+    reverse_tables = energy_tables_for([perturbed_parent, parent])
+    reverse_scores, reverse_assignments = run_simulated_annealing(
+        reverse_tables, pose_seeds=seeds.flip(0)
+    )
+    # Energy-table reductions may vary slightly with batch layout. Stable
+    # random streams must nevertheless preserve the selected assignments.
+    score_atol = 2.0e-4 if torch_device.type == "cuda" else 0
+    torch.testing.assert_close(
+        scores_a[0], reverse_scores[1], rtol=0, atol=score_atol
+    )
+    torch.testing.assert_close(
+        scores_a[1], reverse_scores[0], rtol=0, atol=score_atol
+    )
+    torch.testing.assert_close(
+        assignments_a[0], reverse_assignments[1], rtol=0, atol=0
+    )
+    torch.testing.assert_close(
+        assignments_a[1], reverse_assignments[0], rtol=0, atol=0
+    )
+
+    singleton_tables = energy_tables_for([parent])
+    singleton_scores, singleton_assignments = run_simulated_annealing(
+        singleton_tables, pose_seeds=seeds[:1]
+    )
+    torch.testing.assert_close(
+        scores_a[0], singleton_scores[0], rtol=0, atol=score_atol
+    )
+    torch.testing.assert_close(
+        assignments_a[0], singleton_assignments[0], rtol=0, atol=0
+    )
+
+
 def test_pack_rotamers_optH(default_database, ubq_pdb, torch_device):
     n_poses = 4
     p = pose_stack_from_pdb(ubq_pdb, torch_device, residue_start=0, residue_end=76)

@@ -437,7 +437,11 @@ MGPU_DEVICE float warp_wide_sim_annealing(
 template <tmol::Device D, class IG, int ChunkSize>
 struct Annealer {
   static auto run_simulated_annealing(
-      ContextManager& mgr, IG ig, at::CUDAGeneratorImpl* gen)
+      ContextManager& mgr,
+      IG ig,
+      at::CUDAGeneratorImpl* gen,
+      TView<int64_t, 1, D> pose_seeds,
+      bool use_pose_seeds)
       -> std::tuple<TPack<float, 2, D>, TPack<int, 3, D> > {
     int const n_poses = ig.n_poses_cpu();
     int const max_n_res = ig.max_n_res_cpu();
@@ -593,7 +597,6 @@ struct Annealer {
     auto hitemp_simulated_annealing = [=] MGPU_DEVICE(int thread_id) {
       auto seeds = at::cuda::philox::unpack(hitemp_philox_state);
       curandStatePhilox4_32_10_t state;
-      curand_init(std::get<0>(seeds), thread_id, std::get<1>(seeds), &state);
 
       cooperative_groups::thread_block_tile<32> g =
           cooperative_groups::tiled_partition<32>(
@@ -601,6 +604,16 @@ struct Annealer {
       int const cta_id = thread_id / 32;
       int const pose = cta_id / n_hitemp_simA_traj;
       int const traj_id = cta_id % n_hitemp_simA_traj;
+      if (use_pose_seeds) {
+        curand_init(
+            static_cast<unsigned long long>(pose_seeds[pose]),
+            traj_id * 32 + g.thread_rank(),
+            0,
+            &state);
+      } else {
+        curand_init(
+            std::get<0>(seeds), thread_id, std::get<1>(seeds), &state);
+      }
       int const n_res = ig.n_res(pose);
       int const n_rotamers = ig.n_rotamers(pose);
 
@@ -680,7 +693,6 @@ struct Annealer {
     auto lotemp_simulated_annealing = [=] MGPU_DEVICE(int thread_id) {
       auto seeds = at::cuda::philox::unpack(lotemp_philox_state);
       curandStatePhilox4_32_10_t state;
-      curand_init(std::get<0>(seeds), thread_id, std::get<1>(seeds), &state);
 
       cooperative_groups::thread_block_tile<32> g =
           cooperative_groups::tiled_partition<32>(
@@ -689,6 +701,16 @@ struct Annealer {
       int const cta_id = thread_id / 32;
       int const pose = cta_id / n_lotemp_simA_traj;
       int const traj_id = cta_id % n_lotemp_simA_traj;
+      if (use_pose_seeds) {
+        curand_init(
+            static_cast<unsigned long long>(pose_seeds[pose]),
+            traj_id * 32 + g.thread_rank(),
+            1ULL << 40,
+            &state);
+      } else {
+        curand_init(
+            std::get<0>(seeds), thread_id, std::get<1>(seeds), &state);
+      }
       int const source_traj =
           sorted_hitemp_traj[pose][traj_id / n_lotemp_expansions];
 
@@ -759,7 +781,6 @@ struct Annealer {
     auto fullquench = ([=] MGPU_DEVICE(int thread_id) {
       auto seeds = at::cuda::philox::unpack(quench_philox_state);
       curandStatePhilox4_32_10_t state;
-      curand_init(std::get<0>(seeds), thread_id, std::get<1>(seeds), &state);
 
       cooperative_groups::thread_block_tile<32> g =
           cooperative_groups::tiled_partition<32>(
@@ -767,6 +788,16 @@ struct Annealer {
       int const cta_id = thread_id / 32;
       int const pose = cta_id / n_fullquench_traj;
       int const traj_id = cta_id % n_fullquench_traj;
+      if (use_pose_seeds) {
+        curand_init(
+            static_cast<unsigned long long>(pose_seeds[pose]),
+            traj_id * 32 + g.thread_rank(),
+            2ULL << 40,
+            &state);
+      } else {
+        curand_init(
+            std::get<0>(seeds), thread_id, std::get<1>(seeds), &state);
+      }
       int const source_traj = sorted_lotemp_traj[pose][traj_id];
 
       int const n_res = ig.n_res(pose);
@@ -887,7 +918,9 @@ auto AnnealerDispatch<D>::forward(
     TView<int64_t, 3, D> chunk_offset_offsets,
     TView<int64_t, 1, D> chunk_offsets,
     TView<float, 1, D> energy1b,
-    TView<float, 1, D> energy2b)
+    TView<float, 1, D> energy2b,
+    TView<int64_t, 1, D> pose_seeds,
+    bool use_pose_seeds)
     -> std::tuple<TPack<float, 2, D>, TPack<int, 3, D> > {
   int const n_poses_cpu = pose_n_res.size(0);
   int const max_n_res_cpu = chunk_offset_offsets.size(1);
@@ -954,9 +987,11 @@ auto AnnealerDispatch<D>::forward(
 
   auto result = chunk_size == 16
                     ? Annealer<D, InteractionGraph<D, int, float>, 16>::
-                          run_simulated_annealing(mgr, ig, gen)
+                          run_simulated_annealing(
+                              mgr, ig, gen, pose_seeds, use_pose_seeds)
                     : Annealer<D, InteractionGraph<D, int, float>, 0>::
-                          run_simulated_annealing(mgr, ig, gen);
+                          run_simulated_annealing(
+                              mgr, ig, gen, pose_seeds, use_pose_seeds);
 
   return result;
 }
