@@ -4,6 +4,7 @@ import torch
 from typing import Tuple
 
 from tmol.types import Tensor
+from tmol.database.scoring._serialization import aliased_safe_globals
 
 
 @attr.s(auto_attribs=True, frozen=True, slots=True)
@@ -32,14 +33,12 @@ class RamaDatabase:
     @classmethod
     def from_file(cls, fname: str):
         _OLD = "tmol.database.scoring.rama"
-        with torch.serialization.safe_globals(
+        with aliased_safe_globals(
             [
                 RamaDatabase,
-                (RamaDatabase, f"{_OLD}.RamaDatabase"),
                 RamaTables,
-                (RamaTables, f"{_OLD}.RamaTables"),
                 RamaMappingParams,
-                (RamaMappingParams, f"{_OLD}.RamaMappingParams"),
-            ]
+            ],
+            _OLD,
         ):
             return torch.load(fname, mmap=True, weights_only=True)

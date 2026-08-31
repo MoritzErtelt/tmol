@@ -3,6 +3,7 @@ import torch
 from typing import Tuple
 
 from tmol.types import Tensor
+from tmol.database.scoring._serialization import aliased_safe_globals
 
 
 @attr.s(auto_attribs=True, slots=True, frozen=True)
@@ -72,22 +73,15 @@ class DunbrackRotamerLibrary:
     @classmethod
     def from_file(cls, fname: str):
         _OLD = "tmol.database.scoring.dunbrack_libraries"
-        with torch.serialization.safe_globals(
+        with aliased_safe_globals(
             [
                 DunbrackRotamerLibrary,
-                (DunbrackRotamerLibrary, f"{_OLD}.DunbrackRotamerLibrary"),
                 DunMappingParams,
-                (DunMappingParams, f"{_OLD}.DunMappingParams"),
                 SemiRotamericAADunbrackLibrary,
-                (
-                    SemiRotamericAADunbrackLibrary,
-                    f"{_OLD}.SemiRotamericAADunbrackLibrary",
-                ),
                 RotamericAADunbrackLibrary,
-                (RotamericAADunbrackLibrary, f"{_OLD}.RotamericAADunbrackLibrary"),
                 RotamericDataForAA,
-                (RotamericDataForAA, f"{_OLD}.RotamericDataForAA"),
-            ]
+            ],
+            _OLD,
         ):
             # Be explicit so application-level
             # TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD does not bypass the safe-global

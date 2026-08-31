@@ -4,6 +4,7 @@ import torch
 from typing import Tuple
 
 from tmol.types import Tensor
+from tmol.database.scoring._serialization import aliased_safe_globals
 
 
 @attr.s(auto_attribs=True, frozen=True, slots=True)
@@ -33,14 +34,12 @@ class OmegaBBDepDatabase:
     @classmethod
     def from_file(cls, fname: str):
         _OLD = "tmol.database.scoring.omega_bbdep"
-        with torch.serialization.safe_globals(
+        with aliased_safe_globals(
             [
                 OmegaBBDepDatabase,
-                (OmegaBBDepDatabase, f"{_OLD}.OmegaBBDepDatabase"),
                 OmegaBBDepMappingParams,
-                (OmegaBBDepMappingParams, f"{_OLD}.OmegaBBDepMappingParams"),
                 OmegaBBDepTables,
-                (OmegaBBDepTables, f"{_OLD}.OmegaBBDepTables"),
-            ]
+            ],
+            _OLD,
         ):
             return torch.load(fname, mmap=True, weights_only=True)
